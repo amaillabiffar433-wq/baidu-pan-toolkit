@@ -9,7 +9,8 @@
 | --- | --- | --- |
 | 账号信息 | `GET /rest/2.0/xpan/nas?method=uinfo` | 返回 `baidu_name` / `uk` / `vip_type` |
 | 容量 | `GET /api/quota?checkfree=1&checkexpire=1` | `total` / `used` / `free`，单位字节 |
-| 列目录 | `GET /rest/2.0/xpan/multimedia?method=listall&path=&recursion=0&limit=&order=name` | 带 `cursor` / `has_more` |
+| 列目录（首选） | `GET /rest/2.0/xpan/file?method=list&dir=&order=name&start=&limit=` | 稳定；`start` 翻页，单页上限 1000 |
+| 列目录（备选） | `GET /rest/2.0/xpan/multimedia?method=listall&path=&recursion=0&limit=&order=name` | 带 `cursor` / `has_more`，但会对 `/` 返回 `20021`（见坑位 7） |
 | 文件详情 | `GET /rest/2.0/xpan/multimedia?method=filemetas&fsids=[id]&dlink=1` | `dlink` 需再追加 token |
 | 搜索 | `GET /rest/2.0/xpan/file?method=search&key=&dir=&recursion=1` | |
 | 新建目录/文件 | `POST /rest/2.0/xpan/file?method=create` | 参数要放**表单体** |
@@ -86,7 +87,22 @@ block_list=["分片1的md5","分片2的md5",...]
 `file?method=delete` 对应用目录（`/apps/<appname>/...`）稳定返回 `31023 参数错误`；
 对普通目录正常。需要清理应用目录时用网盘客户端或网页端。
 
-### 6. errno 速查
+### 7. 列目录：`multimedia?method=listall` 会对根目录翻脸
+
+同一个 token 下实测（2026-10）：
+
+```
+xpan/file?method=list&dir=%2F&start=0&limit=1000      → errno=0，46 条
+xpan/multimedia?method=listall&path=%2F&recursion=0   → errno=20021，0 条
+xpan/multimedia?method=listall&path=%2Fapps           → errno=0，1 条
+```
+
+即 `listall` 会挑路径报 `20021`（同一账号、同一时刻，子目录正常、根目录失败），
+加 `web=1` 也救不回来。所以库里的 `listDir` / `listAll` / `fsidOf` 一律优先
+`file?method=list` 翻页，只有在它报错时才回退 `listall`；
+递归列举改成逐层列目录自己走栈，不再依赖 `recursion=1`。
+
+### 8. errno 速查
 
 ```
 0       成功
@@ -95,6 +111,7 @@ block_list=["分片1的md5","分片2的md5",...]
 -8 / 31061 条目已存在
 -9 / 31066 文件不存在
 2 / 31023  参数错误
+20021    列目录被拒（multimedia listall 对根目录，改用 file?method=list）
 31045    请求里没带 access_token
 31064    未授权 / 文件不可用
 31200    空间不足

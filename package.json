@@ -1,6 +1,6 @@
 {
   "name": "baidu-pan-toolkit",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "百度网盘命令行与 MCP 服务：上传、下载、列目录、搜索、整理、分享链接。零 npm 依赖，只用 Node 内置模块 + curl。",
   "type": "module",
   "license": "MIT",

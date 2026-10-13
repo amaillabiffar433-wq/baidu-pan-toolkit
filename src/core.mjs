@@ -155,32 +155,47 @@ export async function quota(token = loadToken()) {
 
 /* -------------------------------------------------------------------- 列表 */
 
+/**
+ * 列目录。优先用 `xpan/file?method=list`（稳定、支持 start 翻页），
+ * 失败时回退到 `xpan/multimedia?method=listall`（部分账号上会对 / 返回 20021）。
+ */
 export async function listDir(dir = '/', { limit = 1000, token = loadToken() } = {}) {
-  const j = get(`${API}/multimedia?method=listall&access_token=${token}&path=${enc(dir)}&recursion=0&limit=${limit}&order=name`);
-  assertOk(j, '列目录');
-  const items = (j.list || []).map((x) => ({
-    name: x.server_filename, isdir: !!x.isdir, size: x.size, fs_id: x.fs_id,
-    mtime: x.server_mtime, md5: x.md5 || undefined,
-  }));
+  const pageSize = Math.min(Math.max(Number(limit) || 1000, 1), 1000);
+  const items = [];
+  let start = 0;
+  let usedFallback = false;
+  for (;;) {
+    let j = get(`${API}/file?method=list&access_token=${token}&dir=${enc(dir)}&order=name&start=${start}&limit=${pageSize}`);
+    if (j.errno && j.errno !== 0) {
+      usedFallback = true;
+      j = get(`${API}/multimedia?method=listall&access_token=${token}&path=${enc(dir)}&recursion=0&limit=${pageSize}&order=name`);
+    }
+    assertOk(j, '列目录');
+    const batch = j.list || [];
+    for (const x of batch) {
+      items.push({
+        name: x.server_filename, isdir: !!x.isdir, size: x.size, fs_id: x.fs_id,
+        mtime: x.server_mtime, md5: x.md5 || undefined,
+      });
+    }
+    if (usedFallback || batch.length < pageSize || items.length >= limit) break;
+    start += pageSize;
+  }
   return { dir, count: items.length, items };
 }
 
-/** 递归列出目录下所有条目（多用于清理、统计） */
+/** 递归列出目录下所有条目（多用于清理、统计）：逐层列目录，不依赖 recursion 参数 */
 export async function listAll(dir = '/', { token = loadToken(), max = 20000 } = {}) {
   const out = [];
   const stack = [dir];
   while (stack.length) {
     const cur = stack.pop();
-    let cursor = 0;
-    for (;;) {
-      const j = get(`${API}/multimedia?method=listall&access_token=${token}&path=${enc(cur)}&recursion=1&limit=1000&cursor=${cursor}&order=name`);
-      assertOk(j, '列目录');
-      for (const x of j.list || []) {
-        out.push({ name: x.server_filename, path: x.path, isdir: !!x.isdir, size: x.size, fs_id: x.fs_id, mtime: x.server_mtime });
-        if (out.length >= max) return out;
-      }
-      if (!j.has_more) break;
-      cursor = j.cursor;
+    const { items } = await listDir(cur, { token, limit: 1000 });
+    for (const x of items) {
+      const full = (cur.replace(/\/+$/, '') || '') + '/' + x.name;
+      out.push({ name: x.name, path: full, isdir: x.isdir, size: x.size, fs_id: x.fs_id, mtime: x.mtime });
+      if (x.isdir) stack.push(full);
+      if (out.length >= max) return out;
     }
   }
   return out;
@@ -189,9 +204,8 @@ export async function listAll(dir = '/', { token = loadToken(), max = 20000 } = 
 export async function fsidOf(remotePath, token = loadToken()) {
   const parent = path.posix.dirname(remotePath.replace(/\/+$/, '')) || '/';
   const name = path.posix.basename(remotePath.replace(/\/+$/, ''));
-  const j = get(`${API}/multimedia?method=listall&access_token=${token}&path=${enc(parent)}&recursion=0&limit=1000&order=name`);
-  assertOk(j, '列目录');
-  const hit = (j.list || []).find((x) => x.server_filename === name);
+  const { items } = await listDir(parent, { token, limit: 1000 });
+  const hit = items.find((x) => x.name === name);
   if (!hit) throw new Error('网盘上找不到: ' + remotePath);
   return hit.fs_id;
 }
