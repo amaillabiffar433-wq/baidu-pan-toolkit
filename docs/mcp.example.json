@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "baidu-pan": {
+      "command": "node",
+      "args": ["D:/path/to/baidu-pan-toolkit/src/mcp.mjs"],
+      "env": {
+        "BAIDU_PAN_TOKEN": "把这里的值换成你的 access_token，或者删掉 env 用 ~/.baidu-pan/config.json"
+      }
+    }
+  }
+}

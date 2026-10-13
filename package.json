@@ -1,0 +1,28 @@
+{
+  "name": "baidu-pan-toolkit",
+  "version": "1.0.0",
+  "description": "百度网盘命令行与 MCP 服务：上传、下载、列目录、搜索、整理、分享链接。零 npm 依赖，只用 Node 内置模块 + curl。",
+  "type": "module",
+  "license": "MIT",
+  "author": "Exmling",
+  "keywords": ["baidu", "netdisk", "pan", "cli", "mcp", "model-context-protocol", "upload", "download", "百度网盘"],
+  "bin": {
+    "baidu-pan": "bin/baidu-pan.mjs",
+    "baidu-pan-mcp": "src/mcp.mjs"
+  },
+  "exports": {
+    ".": "./src/core.mjs",
+    "./core": "./src/core.mjs"
+  },
+  "files": ["bin", "src", "docs", "README.md", "LICENSE"],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node bin/baidu-pan.mjs --help",
+    "mcp": "node src/mcp.mjs",
+    "selftest": "node test/selftest.mjs",
+    "pack:check": "npm pack --dry-run"
+  },
+  "os": ["win32", "darwin", "linux"]
+}

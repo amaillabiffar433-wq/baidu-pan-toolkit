@@ -1,0 +1,18 @@
+node_modules/
+npm-debug.log*
+*.tgz
+
+# 私密内容，绝不提交
+.env
+.env.*
+config.json
+**/.baidu-pan/
+*.token
+*token*.txt
+
+# 本地测试产物
+test/tmp/
+.tmp/
+*.bak
+.DS_Store
+Thumbs.db
