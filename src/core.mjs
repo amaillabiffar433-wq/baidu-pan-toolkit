@@ -119,9 +119,17 @@ export function httpJson(url, opts) {
 
 export const get = (url) => httpJson(url);
 export const post = (url) => httpJson(url, { method: 'POST' });
+// 约定：method / opera / access_token 一律放 query；业务参数放 POST 表单体。
+// 只放 query 会被 create、filemanager 判为「参数错误 errno=2」；只放 body 会报「errno=3 Unsupported open api」。
 export function postForm(base, params) {
   const q = new URLSearchParams(params).toString();
   return httpJson(base + '?' + q, { method: 'POST' });
+}
+
+export function postApi(base, query, body) {
+  const qs = new URLSearchParams(query).toString();
+  const form = new URLSearchParams(body).toString();
+  return httpJson(base + '?' + qs, { method: 'POST', form });
 }
 
 /* ------------------------------------------------------------------ errors */
@@ -225,8 +233,15 @@ export async function search(keyword, { dir = '/', recursion = 1, token = loadTo
   return { count: (j.list || []).length, items: j.list || [] };
 }
 export async function fileManagerOp(op, filelist, token = loadToken()) {
-  const j = postForm(`${API}/file`, { method: op, access_token: token, async: '0', filelist: JSON.stringify(filelist) });
+  // 正确端点：xpan/file?method=filemanager&opera=<move|copy|rename|delete>
+  const j = postApi(
+    `${API}/file`,
+    { method: 'filemanager', opera: op, access_token: token, async: '0' },
+    { filelist: JSON.stringify(filelist) },
+  );
   assertOk(j, op);
+  const bad = (j.info || []).filter((x) => x && x.errno);
+  if (bad.length) throw new Error(`${op} 失败: ` + JSON.stringify(bad.slice(0, 3)));
   return j;
 }
 export const moveFiles = (paths, dest, token) =>
@@ -268,10 +283,14 @@ export async function uploadLocal(localPath, { remoteDir = '/', remoteName, toke
   const { size, parts, blockList, md5 } = md5Blocks(abs, chunk);
 
   onProgress('计算 md5 完成（' + parts + ' 片）');
-  const pre = postForm(`${API}/file`, {
-    method: 'precreate', access_token: token, path: target, size: String(size),
-    isdir: '0', autoinit: '1', rtype: '3', block_list: JSON.stringify(blockList),
-  });
+  const pre = postApi(
+    `${API}/file`,
+    { method: 'precreate', access_token: token },
+    {
+      path: target, size: String(size),
+      isdir: '0', autoinit: '1', rtype: '3', block_list: JSON.stringify(blockList),
+    },
+  );
   assertOk(pre, '预上传');
   if (pre.rapid_upload) { onProgress('秒传命中'); return { path: target, size, md5, parts: 0, rapid: true, fs_id: pre.fs_id }; }
 
@@ -293,10 +312,14 @@ export async function uploadLocal(localPath, { remoteDir = '/', remoteName, toke
   } finally { fs.closeSync(fd); }
 
   onProgress('合并文件…');
-  const crt = postForm(`${API}/file`, {
-    method: 'create', access_token: token, path: target, size: String(size),
-    isdir: '0', rtype: '3', uploadid: pre.uploadid, block_list: JSON.stringify(blockList),
-  });
+  const crt = postApi(
+    `${API}/file`,
+    { method: 'create', access_token: token },
+    {
+      path: target, size: String(size),
+      isdir: '0', rtype: '3', uploadid: pre.uploadid, block_list: JSON.stringify(blockList),
+    },
+  );
   assertOk(crt, '创建文件');
   return { path: crt.path || target, size, md5: crt.md5 || md5, fs_id: crt.fs_id, parts };
 }
@@ -340,7 +363,11 @@ export async function makeDir(dir, token = loadToken()) {
     const ls = await listDir(parent, { token });
     if (ls.items.some((x) => x.name === name && x.isdir)) return { path: dir, existed: true };
   } catch { /* 列目录失败就继续尝试创建 */ }
-  const j = postForm(`${API}/file`, { method: 'create', access_token: token, path: dir, size: '0', isdir: '1', rtype: '3' });
+  const j = postApi(
+    `${API}/file`,
+    { method: 'create', access_token: token },
+    { path: dir, size: '0', isdir: '1' },
+  );
   if (j.errno !== 0 && j.errno !== -8) throw new Error('建目录失败: ' + explain(j));
   return { path: dir, existed: j.errno === -8, fs_id: j.fs_id };
 }
